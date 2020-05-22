@@ -13,6 +13,12 @@ using Steeltoe.Discovery.Client;
 using Steeltoe.Common.Discovery;
 using Microsoft.Extensions.Logging;
 using Steeltoe.CircuitBreaker.Hystrix;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Steeltoe.Security.Authentication.CloudFoundry;
 
 namespace AllocationsServer
 {
@@ -30,12 +36,28 @@ namespace AllocationsServer
         {
             services.AddCloudFoundryActuators(Configuration);
 
-            services.AddControllers();
+            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddCloudFoundryJwtBearer(Configuration);
+
+            services.AddControllers(mvcOptions =>
+            {
+                if (!Configuration.GetValue("DISABLE_AUTH", false))
+                {
+                    // Set Authorized as default policy
+                    var policy = new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
+                        .RequireAuthenticatedUser()
+                        .RequireClaim("scope", "uaa.resource")
+                        .Build();
+
+                    mvcOptions.Filters.Add(new AuthorizeFilter(policy));
+                }
+            });
             services.AddDiscoveryClient(Configuration);
 
 
             services.AddScoped<IAllocationDataGateway, AllocationDataGateway>();
             services.AddDbContext<AllocationContext>(options => options.UseMySql(Configuration));
+            services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
             services.AddSingleton<IProjectClient>(sp =>
             {
@@ -44,42 +66,43 @@ namespace AllocationsServer
                 {
                     BaseAddress = new Uri(Configuration.GetValue<string>("REGISTRATION_SERVER_ENDPOINT"))
                 };
-
                 var logger = sp.GetService<ILogger<ProjectClient>>();
-                 return new ProjectClient(httpClient, logger);
+
+                var contextAccessor = sp.GetService<IHttpContextAccessor>();
+                return new ProjectClient(httpClient, logger, () => contextAccessor.HttpContext.GetTokenAsync("access_token"));
             });
 
-            
-      
 
-             services.AddHystrixMetricsStream(Configuration);
-            
+
+
+            services.AddHystrixMetricsStream(Configuration);
+
         }
 
-    // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
-    {
-        if (env.IsDevelopment())
+        // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            app.UseDeveloperExceptionPage();
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+
+            app.UseCloudFoundryActuators();
+
+            app.UseRouting();
+
+            app.UseAuthorization();
+
+            app.UseDiscoveryClient();
+
+            app.UseHystrixMetricsStream();
+
+            app.UseHystrixRequestContext();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
         }
-
-        app.UseCloudFoundryActuators();
-
-        app.UseRouting();
-
-        app.UseAuthorization();
-
-        app.UseDiscoveryClient();
-
-        app.UseHystrixMetricsStream();
-        
-        app.UseHystrixRequestContext();
-
-        app.UseEndpoints(endpoints =>
-        {
-            endpoints.MapControllers();
-        });
     }
-}
 }
