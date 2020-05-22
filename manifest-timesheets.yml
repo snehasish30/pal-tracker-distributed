@@ -7,7 +7,5 @@ applications:
     routes:
       - route: timesheets-pal-sv.cfapps.io
     path: Applications/TimesheetsServer/bin/Release/netcoreapp3.1/publish
-    env:
-      REGISTRATION_SERVER_ENDPOINT: https://registration-pal-sv.cfapps.io
     services:
       - tracker-timesheets-database
