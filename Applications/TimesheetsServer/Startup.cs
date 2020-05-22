@@ -11,6 +11,8 @@ using Timesheets.Data;
 using Timesheets.ProjectClient;
 using Steeltoe.Discovery.Client;
 using Steeltoe.Common.Discovery;
+using Microsoft.Extensions.Logging;
+using Steeltoe.CircuitBreaker.Hystrix;
 
 namespace TimesheetsServer
 {
@@ -43,8 +45,11 @@ namespace TimesheetsServer
                     BaseAddress = new Uri(Configuration.GetValue<string>("REGISTRATION_SERVER_ENDPOINT"))
                 };
 
-                return new ProjectClient(httpClient);
-            });
+               var logger = sp.GetService<ILogger<ProjectClient>>();
+                return new ProjectClient(httpClient, logger);
+              });
+
+             services.AddHystrixMetricsStream(Configuration);
             
         }
 
@@ -63,6 +68,10 @@ namespace TimesheetsServer
             app.UseAuthorization();
 
             app.UseDiscoveryClient();
+
+             app.UseHystrixMetricsStream();
+
+            app.UseHystrixRequestContext();
 
             app.UseEndpoints(endpoints =>
             {
